@@ -246,6 +246,20 @@ class YOLOv5(nn.Module):
         return results
 
 
+class ModelEnsemble(nn.Module):
+    def __init__(self, modelA, modelB, modelC) -> None:
+        super(ModelEnsemble, self).__init__()
+        self.modelA = modelA
+        self.modelB = modelB
+        self.modelC = modelC
+
+    def forward(self, low_res, high_res):
+        sr_img = self.modelA(low_res)
+        sr_disc = self.modelB(sr_img)
+        hr_disc = self.modelB(high_res)
+        detection = self.modelC(sr_img)
+        return sr_img, sr_disc, hr_disc, detection
+
 class mseLoss(nn.Module):
     def __init__(self) -> None:
         super(mseLoss, self).__init__()

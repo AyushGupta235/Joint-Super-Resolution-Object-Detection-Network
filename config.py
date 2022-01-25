@@ -1,16 +1,18 @@
 import torch
 from PIL import Image
 
-LOAD_MODEL = True
-SAVE_MODEL = True
+LOAD_MODEL = False
+SAVE_MODEL = False
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 CHECKPOINT_GEN = "gen.pth.tar"
 CHECKPOINT_DISC1 = "disc1.pth.tar"
 CHECKPOINT_DISC2 = "disc2.pth.tar"
+CHECKPOINT_JT = "jt.pth.tar"
 MODEL_DISC2 = "D:\\IIT BHU\\Research\\CWNU\\Joint-SRVDNet\\model_saves\\Discriminator_2"
 MODEL_GEN = "D:\\IIT BHU\\Research\\CWNU\\Joint-SRVDNet\\model_saves\\Generator"
 MODEL_DET = "D:\\IIT BHU\\Research\\CWNU\\Joint-SRVDNet\\model_saves\\Detector"
-MODE = "DISJOINT"
+TRAINING_MODE = "DISJOINT"
+MODE = "train"
 
 ALPHA = 2 * 1e-6
 BETA = 1e-3

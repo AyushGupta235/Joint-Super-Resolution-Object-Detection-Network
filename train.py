@@ -3,17 +3,18 @@ import torch
 import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader
+import torchvision
 from tqdm import tqdm
 
-from model import Discriminator1, Discriminator2, Generator, YOLOv5,  mseLoss, Perceptual_Loss, Adversarial_Loss, Detection_Loss, TotalLoss
+from model import Discriminator1, Discriminator2, Generator, YOLOv5,  mseLoss, Perceptual_Loss, Adversarial_Loss, Detection_Loss, ModelEnsemble
 from dataset import ImageFolder
 import config
 import checkpoints
 
-def train_disjoint(loader, gen, disc2, detector, true_label, optimizer_gen, optimizer_disc2, optimizer_det, mse, bce, vgg):
+def train_disjoint(loader, gen, disc2, detector, optimizer_gen, optimizer_disc2, optimizer_det, mse, bce, vgg):
     loop = tqdm(loader, leave = True)
 
-    for _, (low_res, high_res) in enumerate(loop):
+    for _, (low_res, high_res, true_label) in enumerate(loop):
         high_res = high_res.to(config.DEVICE)
         low_res = low_res.to(config.DEVICE)
 
@@ -47,8 +48,10 @@ def train_disjoint(loader, gen, disc2, detector, true_label, optimizer_gen, opti
         gen_loss.backward()
         optimizer_gen.step()
 
-        # Training Object Detector
-        det = detector(fake_img)
+        # Training Object Detector4
+        trans = torchvision.transforms.ToPILImage()
+        fake_img_PIL = trans(trans)
+        det = detector(fake_img_PIL)
 
         det_loss = Detection_Loss(out = det, label = true_label, obj = True)
 
@@ -56,10 +59,11 @@ def train_disjoint(loader, gen, disc2, detector, true_label, optimizer_gen, opti
         det_loss.backward()
         optimizer_det.step()
 
-def train_joint(loader, gen, disc2, detector, true_label, optimizer, mse, bce, vgg):
+
+def train_joint(loader, gen, disc2, detector, model, optimizer, mse, bce, vgg):
     loop = tqdm(loader, leave = True)
 
-    for _, (low_res, high_res) in enumerate(loop):
+    for _, (low_res, high_res, true_label) in enumerate(loop):
         high_res = high_res.to(config.DEVICE)
         low_res = low_res.to(config.DEVICE)
 
@@ -98,10 +102,13 @@ def train_joint(loader, gen, disc2, detector, true_label, optimizer, mse, bce, v
 
 def run_disjoint():
     dataset = ImageFolder(root_dir = "")
+
+    """Check how to use DataLoader"""
+
     loader = DataLoader(
         dataset,
         batch_size = config.SR_BATCH_SIZE,
-        shuffle = True,
+        shuffle = False,
         pin_memory = True,
         num_workers = config.NUM_WORKERS,
     )
@@ -190,51 +197,34 @@ def run_joint():
     det = YOLOv5().to(config.DEVICE)
     det.load_state_dict(torch.load(config.MODEL_DET))
 
-    optimizer_gen = optim.Adam(gen.parameters(), lr = config.SR_LEARNING_RATE, betas = (0.9, 0.999))
+    model = ModelEnsemble(modelA = gen, modelB = disc2, modelC = det)
+
+    optimizer = optim.AdamW(model.parameters(), lr = config.JT_LEARNING_RATE, betas = (0.9, 0.999), weight_decay = config.JT_DECAY_RATE)
+
+    #optimizer_gen = optim.Adam(gen.parameters(), lr = config.SR_LEARNING_RATE, betas = (0.9, 0.999))
     #optimizer_disc1 = optim.Adam(disc1.parameters(), lr = config.SR_LEARNING_RATE, betas = (0.9, 0.999))
-    optimizer_disc2 = optim.Adam(disc2.parameters(), lr = config.SR_LEARNING_RATE, betas = (0.9, 0.999))
-    optimizer_det = optim.Adam(det.parameters(), lr = config.DET_LEARNING_RATE_1, betas = (0.9, 0.999))
+    #optimizer_disc2 = optim.Adam(disc2.parameters(), lr = config.SR_LEARNING_RATE, betas = (0.9, 0.999))
+    #optimizer_det = optim.Adam(det.parameters(), lr = config.DET_LEARNING_RATE_1, betas = (0.9, 0.999))
     
-    optimizer = optim.Adam(list(gen.parameters()) + list(disc2.parameters()) + list(det.parameters()), lr = config.JT_LEARNING_RATE, betas = (0.9, 0.999))
     mse = mseLoss()
     bce = nn.BCEWithLogitsLoss()
     vgg_loss = Perceptual_Loss()
 
     if config.LOAD_MODEL:
         checkpoints.load_checkpoint(
-            config.CHECKPOINT_GEN,
-            gen,
-            optimizer_gen,
+            config.CHECKPOINT_JT,
+            model,
+            optimizer,
             config.JT_LEARNING_RATE,
         )
 
-        #load_checkpoint(
-        #    config.CHECKPOINT_DISC1,
-        #    disc1,
-        #    optimizer_disc1,
-        #    config.SR_LEARNING_RATE,
-        #)
-
-        checkpoints.load_checkpoint(
-            config.CHECKPOINT_DISC2,
-            disc2,
-            optimizer_disc2,
-            config.JT_LEARNING_RATE,
-        )
-
-        checkpoints.load_checkpoint(
-            config.CHECKPOINT_DET,
-            det,
-            optimizer_det,
-            config.JT_LEARNING_RATE,
-        )
-
-    for _ in range(config.EPOCHS):
+    for _ in range(config.JT_EPOCHS):
         train_joint(
             loader = loader,
             gen = gen,
             disc2 = disc2,
             det = det,
+            model = model,
             optimizer = optimizer,
             mse = mse,
             bce = bce,
@@ -242,12 +232,11 @@ def run_joint():
         )
 
         if config.SAVE_MODEL:
-            checkpoints.save_checkpoint(gen, optimizer_gen, filename = config.CHECKPOINT_GEN)
-            checkpoints.save_checkpoint(disc2, optimizer_disc2, filename = config.CHECKPOINT_DISC2)
+            checkpoints.save_checkpoint(model, optimizer, filename = config.CHECKPOINT_JT)
 
 
 if __name__ == "__main__":
-    if config.MODE == "DISJOINT":
+    if config.TRAINING_MODE == "DISJOINT":
         run_disjoint()
-    elif config.MODE == "JOINT":
+    elif config.TRAINING_MODE == "JOINT":
         run_joint()

@@ -8,7 +8,7 @@ import checkpoints
 
 
 def test(loader, gen, disc2, detector, ):
-
+    
 
 def run_test():
     dataset = ImageFolder(root_dir = config.ORG_DIR)
